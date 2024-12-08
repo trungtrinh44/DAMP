@@ -10,7 +10,7 @@
   "momentum": 0.9,
   "num_epochs": 90,
   "label_smoothing": 0.0,
-  "num_microbatches_per_batch": 1,
+  "num_microbatches_per_batch": 8,
   "sync_batch_norm": false,
   "method": "SAM",
   "rho": 0.05

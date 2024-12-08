@@ -18,7 +18,7 @@
   "num_test_workers": 2,
   "validation": false,
   "validation_fraction": 0.1,
-  "num_microbatches_per_batch": 1,
+  "num_microbatches_per_batch": 8,
   "sync_batch_norm": true,
   "method": "DAMP",
   "std": 0.1
