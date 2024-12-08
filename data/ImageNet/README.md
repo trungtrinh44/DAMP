@@ -22,6 +22,46 @@ TODO: add instructions to prepare the corrupted test sets of ImageNet.
 
 # Preparing the corrupted test sets of ImageNet
 
+## Preparing the ImageNet-C dataset
+
+Download the dataset from [link](https://github.com/hendrycks/robustness) and move the tar files to `data/ImageNet`, then extract and delete the files:
+```bash
+mkdir ImageNet-C
+tar -xvf blur.tar -C ImageNet-C && rm -rf blur.tar
+tar -xvf digital.tar -C ImageNet-C && rm -rf digital.tar
+tar -xvf extra.tar -C ImageNet-C && rm -rf extra.tar
+tar -xvf noise.tar -C ImageNet-C && rm -rf noise.tar
+tar -xvf weather.tar -C ImageNet-C && rm -rf weather.tar
+```
+
+Then activate the installed python environment (to install the environment, read `install_steps.md` in the main directory) and run the following command:
+```bash
+python build_imagenet_c.py
+```
+
+Make sure that there is now a `data/ImageNet-C` folder with 75 tfrecords files in it.
+
+
+## Preparing the ImageNet-C-bar dataset
+
+Run the following command to download the dataset
+```bash
+wget https://dl.fbaipublicfiles.com/inc_bar/imagenet_c_bar.tar.gz
+```
+then move the file to `data/ImageNet`, then extract and delete the file:
+```bash
+tar -xvf imagenet_c_bar.tar.gz && rm -rf imagenet_c_bar.tar.gz
+mv cbar_download ImageNet-C-bar
+```
+
+Then activate the installed python environment (to install the environment, read `install_steps.md` in the main directory) and run the following command:
+```bash
+python build_imagenet_c_bar.py
+```
+
+Make sure that there is now a `data/ImageNet-C-bar` folder with 50 tfrecords files in it.
+
+
 ## Preparing the ImageNet-A dataset
 
 Inside the folder `data/ImageNet`, run the following command to download and extract the tarfile:
@@ -127,8 +167,3 @@ Make sure that we now have the files `ImageNet-Cartoon.tfrecord` and `ImageNet-D
 ```bash
 rm -rf datasets
 ```
-
-## Preparing the ImageNet-C dataset
-
-
-## Preparing the ImageNet-$\bar{C}$ dataset
