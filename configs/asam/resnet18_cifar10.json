@@ -1,0 +1,26 @@
+{
+  "model": "ResNet18",
+  "num_ece_bins": 15,
+  "train_batch_size": 128,
+  "test_batch_size": 512,
+  "weight_decay": 0.0005,
+  "dataset": "cifar10",
+  "initial_lr": 0.1,
+  "lr_ratio": 0.01,
+  "milestones": [
+    0.5,
+    0.9
+  ],
+  "num_start_epochs": 0,
+  "momentum": 0.9,
+  "num_epochs": 300,
+  "num_train_workers": 8,
+  "num_test_workers": 2,
+  "validation": false,
+  "validation_fraction": 0.1,
+  "num_microbatches_per_batch": 1,
+  "sync_batch_norm": true,
+  "method": "ASAM",
+  "rho": 1.0,
+  "eta": 0.0
+}

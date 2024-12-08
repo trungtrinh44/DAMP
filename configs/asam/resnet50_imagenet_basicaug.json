@@ -1,0 +1,18 @@
+{
+  "model": "ResNet50",
+  "num_ece_bins": 15,
+  "train_batch_size": 2048,
+  "test_batch_size": 2048,
+  "weight_decay": 0.0001,
+  "initial_lr": 0.1,
+  "lr_ratio": 0.001,
+  "num_warmup_epochs": 5,
+  "momentum": 0.9,
+  "num_epochs": 90,
+  "label_smoothing": 0.0,
+  "num_microbatches_per_batch": 1,
+  "sync_batch_norm": false,
+  "method": "ASAM",
+  "eta": 0.0,
+  "rho": 1.5
+}

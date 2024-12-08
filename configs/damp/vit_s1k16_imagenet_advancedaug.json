@@ -1,0 +1,35 @@
+{
+  "model": "ViT_S1k16",
+  "num_ece_bins": 15,
+  "train_batch_size": 1024,
+  "test_batch_size": 1024,
+  "num_epochs": 500,
+  "label_smoothing": 0.0,
+  "weight_decay": 0.1,
+  "adamw_betas": [
+    0.9,
+    0.999
+  ],
+  "adamw_eps": 1e-08,
+  "adamw_eps_root": 0.0,
+  "adamw_max_norm": 1.0,
+  "lr_init_value": 1e-06,
+  "lr_peak_value": 0.001,
+  "lr_warmup_steps": 10000,
+  "lr_end_value": 0.0,
+  "lr_exponent": 1,
+  "num_microbatches_per_batch": 1,
+  "advanced_augmentation": true,
+  "mixup_lambda": 0.8,
+  "num_randaug_layers": 2,
+  "randaug_magnitude": 10,
+  "method": "DAMP",
+  "std": 0.1,
+  "dataset": "imagenet",
+  "num_classes": 1000,
+  "input_size": [
+    224,
+    224,
+    3
+  ]
+}
