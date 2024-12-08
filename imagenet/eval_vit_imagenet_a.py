@@ -12,14 +12,17 @@ import jax
 import jax.numpy as jnp
 from checkpointer import Checkpointer
 import models
-from imagenet.loader_for_resnet import (
+from imagenet.loader_for_vit import (
     get_corrupted_loader_256,
 )
 from tqdm import tqdm
 from utils import ece
+import numpy as np
+
+A_mask = jnp.array(np.load("imagenet/A_mask.npy"))
 
 
-def test_model(model_fn, params, state, dataloader, ece_bins, K):
+def test_model(model_fn, params, dataloader, ece_bins, K):
     nll = 0
     acc = jnp.zeros(K)
     y_prob = []
@@ -30,7 +33,7 @@ def test_model(model_fn, params, state, dataloader, ece_bins, K):
 
     @partial(jax.pmap)
     def eval_batch(bx, by):
-        logits = model_fn(params, state, bx)
+        logits = model_fn(params, bx)[:, A_mask]
         nll = -(
             jax.nn.log_softmax(logits, axis=-1)
             * jax.nn.one_hot(
@@ -92,27 +95,23 @@ if __name__ == "__main__":
     checkpointer = Checkpointer(os.path.join(args.root, "checkpoint.pkl"))
     checkpoint = checkpointer.load()
     params = checkpoint["params"]
-    state = checkpoint["state"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
-            num_classes=config["num_classes"], bn_axis_name=None, low_res=False
+        getattr(models, config["model"])(
+            num_classes=config["num_classes"],
         ).apply,
-        mutable=list(state.keys()),
     )
 
-    def model_fn(params, state, bx):
-        (logits, _), _ = apply_fn({"params": params, **state}, bx, False)
+    def model_fn(params, bx):
+        logits = apply_fn({"params": params}, bx, is_training=False)
         return logits
 
-    for split in ["A", "Sketch"]:
+    for split in ["A"]:
         dataloader = get_corrupted_loader_256(
             os.path.join("data", f"ImageNet-{split}.tfrecord"),
             batch_size=args.batch_size,
         )
-        result = test_model(
-            model_fn, params, state, dataloader, args.ece_bins, args.topK
-        )
+        result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)
         os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
         with open(
             os.path.join(args.root, config["dataset"], split, f"result.json"),

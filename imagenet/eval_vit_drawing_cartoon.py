@@ -13,15 +13,17 @@ import jax.numpy as jnp
 from checkpointer import Checkpointer
 import models
 from imagenet.loader_for_vit import (
-    get_corrupted_loader_256,
+    get_corrupted_bar_loader,
 )
 from tqdm import tqdm
 from utils import ece
-import numpy as np
 
 
 def test_model(model_fn, params, dataloader, ece_bins, K):
+    nll = 0
     acc = jnp.zeros(K)
+    y_prob = []
+    y_true = []
     devices = jax.local_devices()
     n_devices = len(devices)
     total_len = 0
@@ -29,31 +31,41 @@ def test_model(model_fn, params, dataloader, ece_bins, K):
     @partial(jax.pmap)
     def eval_batch(bx, by):
         logits = model_fn(params, bx)
+        nll = (
+            -(
+                jax.nn.log_softmax(logits, axis=-1)
+                * jax.nn.one_hot(
+                    by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
+                )
+            )
+            .sum(-1)
+            .sum()
+        )
         probs = jax.nn.softmax(logits, axis=-1)
         topK = jax.lax.top_k(probs, k=K)[1]
-        return topK
+        return nll, probs, (topK == by[..., None]).sum(axis=0)
 
     for batch in tqdm(dataloader):
         bx = jnp.array(batch["image"]._numpy())
-        original_by = by = jnp.array(batch["label"]._numpy()) + 1
-        batch_len = bx.shape[0]
-        total_len += batch_len
-        if batch_len % n_devices != 0:
-            padded_amount = n_devices - (batch_len % n_devices)
-            bx = jnp.concatenate(
-                [bx, jnp.zeros((padded_amount, *bx[0].shape), bx.dtype)], axis=0
-            )
-            by = jnp.concatenate(
-                [by, jnp.zeros((padded_amount, *by[0].shape), by.dtype)], axis=0
-            )
+        by = jnp.array(batch["label"]._numpy())
+        y_true.append(by)
+        total_len += bx.shape[0]
         bx = jax.device_put_sharded(jnp.split(bx, n_devices, axis=0), devices)
         by = jax.device_put_sharded(jnp.split(by, n_devices, axis=0), devices)
-        topK = eval_batch(bx, by)
-        topK = jnp.concatenate(topK, axis=0)[:batch_len]
-        acc += (topK[:, :, None] == original_by[:, None, :]).sum(axis=(0, 2))
+        bnll, probs, topK = eval_batch(bx, by)
+        probs = jnp.concatenate(probs, axis=0)
+        nll += bnll.sum()
+        y_prob.append(probs)
+        acc += topK.sum(axis=0)
+    nll /= total_len
     acc /= total_len
     acc = jnp.cumsum(acc)
+    y_prob = jnp.concatenate(y_prob, axis=0)
+    y_true = jnp.concatenate(y_true, axis=0)
+    ece_val = ece(y_prob, y_true, ece_bins)
     result = {
+        "nll": float(nll),
+        "ece": float(ece_val),
         **{f"top-{k}": float(a) for k, a in enumerate(acc, 1)},
     }
     return result
@@ -78,7 +90,7 @@ if __name__ == "__main__":
     params = checkpoint["params"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"],
         ).apply,
     )
@@ -87,18 +99,16 @@ if __name__ == "__main__":
         logits = apply_fn({"params": params}, bx, is_training=False)
         return logits
 
-    for split in ["background", "material", "texture"]:
-        dataloader = get_corrupted_loader_256(
-            [os.path.join("data", f"ImageNet-D/{split}.tfrecord")],
+    for split in ["Drawing", "Cartoon"]:
+        dataloader = get_corrupted_bar_loader(
+            os.path.join("data", f"ImageNet-{split}.tfrecord"),
+            dtype=jnp.float32,
             batch_size=args.batch_size,
-            num_label_per_example=3,
         )
         result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)
-        os.makedirs(
-            os.path.join(args.root, config["dataset"], "ImageNet-D"), exist_ok=True
-        )
+        os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
         with open(
-            os.path.join(args.root, config["dataset"], "ImageNet-D", f"{split}.json"),
+            os.path.join(args.root, config["dataset"], split, f"result.json"),
             "w",
         ) as out:
             json.dump(result, out)

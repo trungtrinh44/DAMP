@@ -8,21 +8,20 @@ import json
 import os
 import argparse
 from functools import partial
-import flax
 import jax
 import jax.numpy as jnp
-import numpy as np
 from checkpointer import Checkpointer
 import models
-from imagenet.loader_for_resnet import (
-    get_corrupted_bar_loader,
-    CORRUPTIONS_BAR,
-)
+from imagenet.loader_for_resnet import get_eval_loader, MEAN_RGB, STDDEV_RGB
 from tqdm import tqdm
 from utils import ece
+import numpy as np
+
+mean_rgb = jnp.array(MEAN_RGB) / 255.0
+std_rgb = jnp.array(STDDEV_RGB) / 255.0
 
 
-def test_model(model_fn, params, state, dataloader, ece_bins, K):
+def test_model(model_fn, params, state, dataloader, ece_bins, K, epsilon):
     nll = 0
     acc = jnp.zeros(K)
     y_prob = []
@@ -33,33 +32,50 @@ def test_model(model_fn, params, state, dataloader, ece_bins, K):
 
     @partial(jax.pmap)
     def eval_batch(bx, by):
-        logits = model_fn(params, state, bx)
-        nll = (
-            -(
+        # First step: Generate adversarial example
+        def get_logits(bx):
+            logits = model_fn(params, state, bx)
+            nll = -(
                 jax.nn.log_softmax(logits, axis=-1)
                 * jax.nn.one_hot(
                     by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
                 )
+            ).sum(-1)
+            return nll.sum()
+
+        bx_grads = jax.grad(get_logits, 0)((bx - mean_rgb) / std_rgb)
+        adversarial_bx = jnp.clip(bx + jnp.sign(bx_grads) * epsilon, 0.0, 1.0)
+        logits = model_fn(params, state, (adversarial_bx - mean_rgb) / std_rgb)
+        nll = -(
+            jax.nn.log_softmax(logits, axis=-1)
+            * jax.nn.one_hot(
+                by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
             )
-            .sum(-1)
-            .sum()
-        )
+        ).sum(-1)
         probs = jax.nn.softmax(logits, axis=-1)
         topK = jax.lax.top_k(probs, k=K)[1]
-        return nll, probs, (topK == by[..., None]).sum(axis=0)
+        return nll, probs, topK
 
     for batch in tqdm(dataloader):
         bx = jnp.array(batch["image"]._numpy())
-        by = jnp.array(batch["label"]._numpy())
+        original_by = by = jnp.array(batch["label"]._numpy())
         y_true.append(by)
-        total_len += bx.shape[0]
+        batch_len = bx.shape[0]
+        total_len += batch_len
+        if batch_len % n_devices != 0:
+            padded_amount = n_devices - (batch_len % n_devices)
+            bx = jnp.concatenate(
+                [bx, jnp.zeros((padded_amount, *bx[0].shape), bx.dtype)], axis=0
+            )
+            by = jnp.concatenate([by, jnp.zeros((padded_amount,), by.dtype)], axis=0)
         bx = jax.device_put_sharded(jnp.split(bx, n_devices, axis=0), devices)
         by = jax.device_put_sharded(jnp.split(by, n_devices, axis=0), devices)
         bnll, probs, topK = eval_batch(bx, by)
-        probs = jnp.concatenate(probs, axis=0)
-        nll += bnll.sum()
+        probs = jnp.concatenate(probs, axis=0)[:batch_len]
+        nll += jnp.concatenate(bnll, axis=0)[:batch_len].sum()
+        topK = jnp.concatenate(topK, axis=0)[:batch_len]
+        acc += (topK == original_by[..., None]).sum(axis=0)
         y_prob.append(probs)
-        acc += topK.sum(axis=0)
     nll /= total_len
     acc /= total_len
     acc = jnp.cumsum(acc)
@@ -86,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--ece_bins", type=int, default=15)
     parser.add_argument("--topK", type=int, default=5)
+    parser.add_argument("--epsilons", nargs="+", type=float)
     args = parser.parse_args()
 
     checkpointer = Checkpointer(os.path.join(args.root, "checkpoint.pkl"))
@@ -94,7 +111,7 @@ if __name__ == "__main__":
     state = checkpoint["state"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"], bn_axis_name=None, low_res=False
         ).apply,
         mutable=list(state.keys()),
@@ -104,23 +121,23 @@ if __name__ == "__main__":
         (logits, _), _ = apply_fn({"params": params, **state}, bx, False)
         return logits
 
-    for corruption in CORRUPTIONS_BAR:
-        for i in range(5):
-            dataloader = get_corrupted_bar_loader(
-                os.path.join("data", "ImageNet-C-bar", f"{corruption}_{i+1}.tfrecords"),
-                batch_size=args.batch_size,
-                dtype=jnp.float32,
-            )
-            result = test_model(
-                model_fn, params, state, dataloader, args.ece_bins, args.topK
-            )
-            os.makedirs(
-                os.path.join(args.root, config["dataset"], corruption), exist_ok=True
-            )
-            with open(
-                os.path.join(
-                    args.root, config["dataset"], corruption, f"result_{i}.json"
-                ),
-                "w",
-            ) as out:
-                json.dump(result, out)
+    split = f"fgsm"
+    dataloader = get_eval_loader(
+        root="data/ImageNet",
+        dtype=np.float32,
+        batch_size=args.batch_size,
+        before_norm=True,
+    )
+    os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
+    results = {}
+    for epsilon in args.epsilons:
+        result = test_model(
+            model_fn, params, state, dataloader, args.ece_bins, args.topK, epsilon
+        )
+        print("Epsilon:", result)
+        results[epsilon] = result
+    with open(
+        os.path.join(args.root, config["dataset"], split, f"result.json"),
+        "w",
+    ) as out:
+        json.dump(results, out)

@@ -8,16 +8,12 @@ import json
 import os
 import argparse
 from functools import partial
-import flax
 import jax
 import jax.numpy as jnp
-import numpy as np
 from checkpointer import Checkpointer
 import models
 from imagenet.loader_for_resnet import (
-    get_eval_loader,
-    get_corrupted_loader,
-    CORRUPTIONS,
+    get_corrupted_bar_loader,
 )
 from tqdm import tqdm
 from utils import ece
@@ -95,7 +91,7 @@ if __name__ == "__main__":
     state = checkpoint["state"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"], bn_axis_name=None, low_res=False
         ).apply,
         mutable=list(state.keys()),
@@ -105,34 +101,18 @@ if __name__ == "__main__":
         (logits, _), _ = apply_fn({"params": params, **state}, bx, False)
         return logits
 
-    test_loader = get_eval_loader(
-        root="data/ImageNet", batch_size=args.batch_size, dtype=np.float32
-    )
-
-    test_result = test_model(
-        model_fn, params, state, test_loader, args.ece_bins, args.topK
-    )
-    os.makedirs(os.path.join(args.root, config["dataset"]), exist_ok=True)
-    with open(
-        os.path.join(args.root, config["dataset"], "test_result.json"), "w"
-    ) as out:
-        json.dump(test_result, out)
-    for corruption in CORRUPTIONS:
-        for i in range(5):
-            dataloader = get_corrupted_loader(
-                os.path.join("data", "ImageNet-C", f"{corruption}_{i+1}.tfrecords"),
-                batch_size=args.batch_size,
-            )
-            result = test_model(
-                model_fn, params, state, dataloader, args.ece_bins, args.topK
-            )
-            os.makedirs(
-                os.path.join(args.root, config["dataset"], corruption), exist_ok=True
-            )
-            with open(
-                os.path.join(
-                    args.root, config["dataset"], corruption, f"result_{i}.json"
-                ),
-                "w",
-            ) as out:
-                json.dump(result, out)
+    for split in ["Drawing", "Cartoon"]:
+        dataloader = get_corrupted_bar_loader(
+            os.path.join("data", f"ImageNet-{split}.tfrecord"),
+            dtype=jnp.float32,
+            batch_size=args.batch_size,
+        )
+        result = test_model(
+            model_fn, params, state, dataloader, args.ece_bins, args.topK
+        )
+        os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
+        with open(
+            os.path.join(args.root, config["dataset"], split, f"result.json"),
+            "w",
+        ) as out:
+            json.dump(result, out)

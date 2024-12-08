@@ -13,7 +13,8 @@ import jax.numpy as jnp
 from checkpointer import Checkpointer
 import models
 from imagenet.loader_for_vit import (
-    get_corrupted_loader_256,
+    get_corrupted_bar_loader,
+    CORRUPTIONS_BAR,
 )
 from tqdm import tqdm
 from utils import ece
@@ -31,36 +32,32 @@ def test_model(model_fn, params, dataloader, ece_bins, K):
     @partial(jax.pmap)
     def eval_batch(bx, by):
         logits = model_fn(params, bx)
-        nll = -(
-            jax.nn.log_softmax(logits, axis=-1)
-            * jax.nn.one_hot(
-                by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
+        nll = (
+            -(
+                jax.nn.log_softmax(logits, axis=-1)
+                * jax.nn.one_hot(
+                    by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
+                )
             )
-        ).sum(-1)
+            .sum(-1)
+            .sum()
+        )
         probs = jax.nn.softmax(logits, axis=-1)
         topK = jax.lax.top_k(probs, k=K)[1]
-        return nll, probs, topK
+        return nll, probs, (topK == by[..., None]).sum(axis=0)
 
     for batch in tqdm(dataloader):
         bx = jnp.array(batch["image"]._numpy())
-        original_by = by = jnp.array(batch["label"]._numpy())
+        by = jnp.array(batch["label"]._numpy())
         y_true.append(by)
-        batch_len = bx.shape[0]
-        total_len += batch_len
-        if batch_len % n_devices != 0:
-            padded_amount = n_devices - (batch_len % n_devices)
-            bx = jnp.concatenate(
-                [bx, jnp.zeros((padded_amount, *bx[0].shape), bx.dtype)], axis=0
-            )
-            by = jnp.concatenate([by, jnp.zeros((padded_amount,), by.dtype)], axis=0)
+        total_len += bx.shape[0]
         bx = jax.device_put_sharded(jnp.split(bx, n_devices, axis=0), devices)
         by = jax.device_put_sharded(jnp.split(by, n_devices, axis=0), devices)
         bnll, probs, topK = eval_batch(bx, by)
-        probs = jnp.concatenate(probs, axis=0)[:batch_len]
-        nll += jnp.concatenate(bnll, axis=0)[:batch_len].sum()
-        topK = jnp.concatenate(topK, axis=0)[:batch_len]
-        acc += (topK == original_by[..., None]).sum(axis=0)
+        probs = jnp.concatenate(probs, axis=0)
+        nll += bnll.sum()
         y_prob.append(probs)
+        acc += topK.sum(axis=0)
     nll /= total_len
     acc /= total_len
     acc = jnp.cumsum(acc)
@@ -94,7 +91,7 @@ if __name__ == "__main__":
     params = checkpoint["params"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"],
         ).apply,
     )
@@ -103,15 +100,21 @@ if __name__ == "__main__":
         logits = apply_fn({"params": params}, bx, is_training=False)
         return logits
 
-    for split in ["Sketch"]:
-        dataloader = get_corrupted_loader_256(
-            os.path.join("data", f"ImageNet-{split}.tfrecord"),
-            batch_size=args.batch_size,
-        )
-        result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)
-        os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
-        with open(
-            os.path.join(args.root, config["dataset"], split, f"result.json"),
-            "w",
-        ) as out:
-            json.dump(result, out)
+    for corruption in CORRUPTIONS_BAR:
+        for i in range(5):
+            dataloader = get_corrupted_bar_loader(
+                os.path.join("data", "ImageNet-C-bar", f"{corruption}_{i+1}.tfrecords"),
+                dtype=jnp.float32,
+                batch_size=args.batch_size,
+            )
+            result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)
+            os.makedirs(
+                os.path.join(args.root, config["dataset"], corruption), exist_ok=True
+            )
+            with open(
+                os.path.join(
+                    args.root, config["dataset"], corruption, f"result_{i}.json"
+                ),
+                "w",
+            ) as out:
+                json.dump(result, out)
