@@ -7,4 +7,4 @@ mamba install cuda-nvcc -c nvidia
 mamba install scikit-learn
 mamba install pytorch torchvision cpuonly -c pytorch
 pip install chex==0.1.86 optax==0.2.2 dm-tree==0.1.8 flax==0.8.2 dm-haiku==0.0.11 tensorflow==2.16.1 tensorflow-datasets==4.9.4
-```bash
+```
