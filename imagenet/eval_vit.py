@@ -8,13 +8,16 @@ import json
 import os
 import argparse
 from functools import partial
+import flax
 import jax
 import jax.numpy as jnp
+import numpy as np
 from checkpointer import Checkpointer
 import models
 from imagenet.loader_for_vit import (
-    get_corrupted_bar_loader,
-    CORRUPTIONS_BAR,
+    get_eval_loader,
+    get_corrupted_loader,
+    CORRUPTIONS,
 )
 from tqdm import tqdm
 from utils import ece
@@ -91,7 +94,7 @@ if __name__ == "__main__":
     params = checkpoint["params"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"],
         ).apply,
     )
@@ -100,11 +103,20 @@ if __name__ == "__main__":
         logits = apply_fn({"params": params}, bx, is_training=False)
         return logits
 
-    for corruption in CORRUPTIONS_BAR:
+    test_loader = get_eval_loader(
+        root="data/ImageNet", batch_size=args.batch_size, dtype=np.float32
+    )
+
+    test_result = test_model(model_fn, params, test_loader, args.ece_bins, args.topK)
+    os.makedirs(os.path.join(args.root, config["dataset"]), exist_ok=True)
+    with open(
+        os.path.join(args.root, config["dataset"], "test_result.json"), "w"
+    ) as out:
+        json.dump(test_result, out)
+    for corruption in CORRUPTIONS:
         for i in range(5):
-            dataloader = get_corrupted_bar_loader(
-                os.path.join("data", "ImageNet-C-bar", f"{corruption}_{i+1}.tfrecords"),
-                dtype=jnp.float32,
+            dataloader = get_corrupted_loader(
+                os.path.join("data", "ImageNet-C", f"{corruption}_{i+1}.tfrecords"),
                 batch_size=args.batch_size,
             )
             result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)

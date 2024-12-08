@@ -12,17 +12,16 @@ import jax
 import jax.numpy as jnp
 from checkpointer import Checkpointer
 import models
-from imagenet.loader_for_vit import (
-    get_corrupted_loader_256,
-)
+from imagenet.loader_for_vit import get_eval_loader, MEAN_RGB, STDDEV_RGB
 from tqdm import tqdm
 from utils import ece
 import numpy as np
 
-A_mask = jnp.array(np.load("imagenet/A_mask.npy"))
+mean_rgb = jnp.array(MEAN_RGB) / 255.0
+std_rgb = jnp.array(STDDEV_RGB) / 255.0
 
 
-def test_model(model_fn, params, dataloader, ece_bins, K):
+def test_model(model_fn, params, dataloader, ece_bins, K, epsilon):
     nll = 0
     acc = jnp.zeros(K)
     y_prob = []
@@ -33,7 +32,20 @@ def test_model(model_fn, params, dataloader, ece_bins, K):
 
     @partial(jax.pmap)
     def eval_batch(bx, by):
-        logits = model_fn(params, bx)[:, A_mask]
+        # First step: Generate adversarial example
+        def get_logits(bx):
+            logits = model_fn(params, bx)
+            nll = -(
+                jax.nn.log_softmax(logits, axis=-1)
+                * jax.nn.one_hot(
+                    by, num_classes=logits.shape[-1], axis=-1, dtype=jnp.float32
+                )
+            ).sum(-1)
+            return nll.sum()
+
+        bx_grads = jax.grad(get_logits, 0)((bx - mean_rgb) / std_rgb)
+        adversarial_bx = jnp.clip(bx + jnp.sign(bx_grads) * epsilon, 0.0, 1.0)
+        logits = model_fn(params, (adversarial_bx - mean_rgb) / std_rgb)
         nll = -(
             jax.nn.log_softmax(logits, axis=-1)
             * jax.nn.one_hot(
@@ -90,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--ece_bins", type=int, default=15)
     parser.add_argument("--topK", type=int, default=5)
+    parser.add_argument("--epsilons", nargs="+", type=float)
     args = parser.parse_args()
 
     checkpointer = Checkpointer(os.path.join(args.root, "checkpoint.pkl"))
@@ -97,7 +110,7 @@ if __name__ == "__main__":
     params = checkpoint["params"]
     config = open_json(os.path.join(args.root, "config.json"))
     apply_fn = partial(
-        getattr(models, config["model_name"])(
+        getattr(models, config["model"])(
             num_classes=config["num_classes"],
         ).apply,
     )
@@ -106,15 +119,23 @@ if __name__ == "__main__":
         logits = apply_fn({"params": params}, bx, is_training=False)
         return logits
 
-    for split in ["A"]:
-        dataloader = get_corrupted_loader_256(
-            os.path.join("data", f"ImageNet-{split}.tfrecord"),
-            batch_size=args.batch_size,
+    split = f"fgsm"
+    dataloader = get_eval_loader(
+        root="data/ImageNet",
+        dtype=np.float32,
+        batch_size=args.batch_size,
+        before_norm=True,
+    )
+    os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
+    results = {}
+    for epsilon in args.epsilons:
+        result = test_model(
+            model_fn, params, dataloader, args.ece_bins, args.topK, epsilon
         )
-        result = test_model(model_fn, params, dataloader, args.ece_bins, args.topK)
-        os.makedirs(os.path.join(args.root, config["dataset"], split), exist_ok=True)
-        with open(
-            os.path.join(args.root, config["dataset"], split, f"result.json"),
-            "w",
-        ) as out:
-            json.dump(result, out)
+        print("Epsilon:", result)
+        results[epsilon] = result
+    with open(
+        os.path.join(args.root, config["dataset"], split, f"result.json"),
+        "w",
+    ) as out:
+        json.dump(results, out)
