@@ -3,7 +3,7 @@
   "num_ece_bins": 15,
   "train_batch_size": 1024,
   "test_batch_size": 1024,
-  "num_epochs": 275,
+  "num_epochs": 300,
   "label_smoothing": 0.0,
   "weight_decay": 0.1,
   "adamw_betas": [

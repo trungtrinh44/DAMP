@@ -50,3 +50,10 @@ For example, to replicate the result of DAMP on CIFAR-10, run the following comm
 python train.py --conf configs/damp/resnet18_cifar10.json --experiment_id 1 --seed 44 --base_dir experiments
 ```
 and the experiment can be found at `experiments/DAMP/ResNet18/cifar10/1`.
+
+For ResNet/ImageNet experiment, please use the `train_imagenet_resnet.py` script, and for ViT/ImageNet experiment, use the `train_imagenet_vit.py` script.
+
+To evaluate the ImageNet model, use the corresponding evaluation script in the `imagenet` folder. For instance, to evaluate ViT model stored in `EXP_DIR` on the original ImageNet validation set and the ImageNet-C set, run the command:
+```bash
+PYTHONPATH="${PYTHONPATH}:$(pwd)" python imagenet/eval_vit_imagenet_and_imagenet_c.py ${EXP_DIR} --batch_size 2048
+```
