@@ -22,7 +22,7 @@ Please cite our work if you find it useful:
 ## Setting up
 
 ### Installing the python packages
-Please follow the instructions in `install_steps.txt` to install the necessary python packages.
+Please follow the instructions in `install_steps.md` to install the necessary python packages.
 
 ### Downloading the small datasets
 To run the experiments for CIFAR-10/100 and TinyImageNet, one needs to run the following commands to download the necessary datasets and store them in the `data` folder:
@@ -34,7 +34,7 @@ bash download_scripts/download_tinyimagenet_c.sh
 ```
 
 ### ImageNet experiments
-To set up the ImageNet experiments, please follow the instructions in `README.md` in the `data/prepare_imagenet` folder.
+To set up the ImageNet experiments, please follow the instructions in `README.md` in the `data/ImageNet` folder.
 
 ## Instructions to replicate the results
 
