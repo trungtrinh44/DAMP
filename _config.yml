@@ -1,0 +1,7 @@
+theme: jekyll-theme-cayman
+openreview_url: https://openreview.net/forum?id=M8dy0ZuSb1
+arxiv_url: https://arxiv.org/abs/2406.16540
+poster_url: ./assets/poster.pdf
+video_url: https://neurips.cc/virtual/2024/poster/95542
+title: Improving robustness to corruptions with multiplicative weight perturbations
+tagline: This website contains information regarding the paper Improving robustness to corruptions with multiplicative weight perturbations.
