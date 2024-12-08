@@ -18,7 +18,7 @@
   "lr_warmup_steps": 10000,
   "lr_end_value": 0.0,
   "lr_exponent": 1,
-  "num_microbatches_per_batch": 1,
+  "num_microbatches_per_batch": 8,
   "advanced_augmentation": false,
   "mixup_lambda": 0.1,
   "num_randaug_layers": 2,
