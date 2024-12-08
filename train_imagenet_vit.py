@@ -327,33 +327,6 @@ def main(args):
             ),
         }
     )
-    checkpoint = checkpointer.load()
-    params = checkpoint["params"]
-
-    def get_logits(bx):
-        logits = apply_fn({"params": params}, bx, is_training=False)
-        return logits
-
-    test_loader = get_eval_loader(
-        root="data/ImageNet", batch_size=args.test_batch_size, dtype=np.float32
-    )
-    test_result = test_model(get_logits, test_loader, args.num_ece_bins)
-    os.makedirs(os.path.join(root_dir, args.dataset), exist_ok=True)
-    with open(os.path.join(root_dir, args.dataset, "test_result.json"), "w") as out:
-        json.dump(test_result, out)
-    for corruption in CORRUPTIONS:
-        for i in range(5):
-            dataloader = get_corrupted_loader(
-                os.path.join("data", "ImageNet-C", f"{corruption}_{i+1}.tfrecords"),
-                batch_size=args.test_batch_size,
-            )
-            result = test_model(get_logits, dataloader, args.num_ece_bins)
-            os.makedirs(os.path.join(root_dir, args.dataset, corruption), exist_ok=True)
-            with open(
-                os.path.join(root_dir, args.dataset, corruption, f"result_{i}.json"),
-                "w",
-            ) as out:
-                json.dump(result, out)
 
 
 if __name__ == "__main__":
