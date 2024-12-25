@@ -56,7 +56,7 @@ DAMP ins an efficient training method that perturbs weights using multiplicative
 To efficiently estimate the expectation, DAMP splits the training batch evenly into\\(M\\)sub-batches, then samples a weight perturbation for each sub-batch to calculate the sub-batch gradient, and finally averages over all sub-batch gradients to obtain the final gradient. Therefore, DAMP is suitable for data parallelism in multi-GPU training.
 
 # Experiment results on ImageNet
-We perform experiments with ResNet50 [1] and ViT [2] architectures on ImageNet [3], and we choose Dropout [4], SAM [5], and ASAM [6] as baselines. For corrupted versions of ImageNet, we use ImageNet-C [7], ImageNet-\\(\bar{C}\\) [8], ImageNet-D [9], ImageNet-A [10], ImageNet-Sketch [11], ImageNet-Drawing and ImageNet-Cartoon [12], and FGSM [13] for adversarial corruptions.
+We perform experiments with ResNet50 [1] and ViT [2] architectures on ImageNet [3], and we choose Dropout [4], SAM [5], and ASAM [6] as baselines. For corrupted versions of ImageNet, we use ImageNet-C [7], ImageNet-\\(\overline{\text{C}}\\) [8], ImageNet-D [9], ImageNet-A [10], ImageNet-Sketch [11], ImageNet-Drawing and ImageNet-Cartoon [12], and FGSM [13] for adversarial corruptions.
 
 
 <img src="./assets/table1.png" alt="drawing" width="100%" max-width="1000px">
